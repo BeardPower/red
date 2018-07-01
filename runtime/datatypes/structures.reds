@@ -330,3 +330,10 @@ red-handle!: alias struct! [
 	value	[integer!]								;-- 32-bit signed integer value
 	_pad	[integer!]	
 ]
+
+red-money!: alias struct! [
+	header 		[integer!]							;-- cell header
+	coefficient [integer!]							;-- 32-bit float singed integer value
+	exponent	[integer!]							;-- 32-bit float singed integer value
+	value		[integer!]							;-- 32-bit float singed integer value
+]

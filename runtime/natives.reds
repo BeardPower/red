@@ -1267,6 +1267,7 @@ natives: context [
 			op <> OP_UNIQUE
 			type <> TYPE_OF(set2)
 		][
+			print-line ["do-set-op"]
 			fire [TO_ERROR(script expect-val) datatype/push type datatype/push TYPE_OF(set2)]
 		]
 		skip-arg: set1 + skip
@@ -1279,10 +1280,10 @@ natives: context [
 			TYPE_BITSET  [bitset/do-bitwise op]
 			TYPE_TYPESET [typeset/do-bitwise op]
 			TYPE_DATE	 [
-				if op <> OP_DIFFERENCE [ERR_EXPECT_ARGUMENT(type 1)]
+				if op <> OP_DIFFERENCE [print-line ["date"] ERR_EXPECT_ARGUMENT(type 1)]
 				date/difference? as red-date! set1 as red-date! set2
 			]
-			default 	 [ERR_EXPECT_ARGUMENT(type 1)]
+			default 	 [print-line ["default fire"] ERR_EXPECT_ARGUMENT(type 1)]
 		]
 	]
 	

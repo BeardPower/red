@@ -102,6 +102,7 @@ red: context [
 	#include %datatypes/email.reds
 	#include %datatypes/handle.reds
 	#include %datatypes/date.reds
+	#include %datatypes/money.reds
 	#if OS = 'Windows [#include %datatypes/image.reds]	;-- temporary
 	#if OS = 'macOS   [#include %datatypes/image.reds]	;-- temporary
 
@@ -196,6 +197,7 @@ red: context [
 		email/init
 		handle/init
 		date/init
+		money/init
 		#if OS = 'Windows [image/init]					;-- temporary
 		#if OS = 'macOS   [image/init]					;-- temporary
 		
@@ -270,6 +272,7 @@ red: context [
 			email/verbose:		verbosity
 			handle/verbose:		verbosity
 			date/verbose:		verbosity
+			money/verbose:		verbosity
 			#if OS = 'Windows [image/verbose: verbosity]
 			#if OS = 'macOS   [image/verbose: verbosity]
 

@@ -20,7 +20,7 @@ datatype: context [
 			i	 [integer!]
 	][
 		i: 1
-		until [
+		until [			
 			name: name-table + i
 			name/word: word/load name/buffer
 			i: i + 1

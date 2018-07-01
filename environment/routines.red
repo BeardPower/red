@@ -27,6 +27,7 @@ set-quiet: routine [
 		node [node!]
 ][
 	type: TYPE_OF(word)
+	print-line ["set-quiet" word]
 	unless ANY_WORD?(type) [ERR_EXPECT_ARGUMENT(TYPE_WORD 0)]
 	w: as red-word! word
 	node: w/ctx

@@ -60,6 +60,7 @@ tag!:			make datatype! #get-definition TYPE_TAG
 email!:			make datatype! #get-definition TYPE_EMAIL
 handle!:		make datatype! #get-definition TYPE_HANDLE
 date!:			make datatype! #get-definition TYPE_DATE
+money!:			make datatype! #get-definition TYPE_MONEY
 
 #if find config/modules 'view [
 	event!: make datatype! #get-definition TYPE_EVENT
