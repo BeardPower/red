@@ -794,14 +794,13 @@ money: context [
 
 				; cast to the money type and set values accordingly to the money! spec
 				right/header: TYPE_MONEY
-				right/value: as float! coefficient/value
+				right/value: coefficient/value
 
 				;print-line ["adding " left/value " and " right/value]
 
 				left: do-math-op left right op
 				return left
 			]
-comment {
 			TYPE_MONEY [
 				switch type-left [
 					TYPE_INTEGER [
@@ -815,7 +814,7 @@ comment {
 
 						; cast to the money type and set values accordingly to the money! spec
 						left/header: TYPE_MONEY
-						left/value: as float! coefficient/value
+						left/value: coefficient/value
 
 						print-line ["adding " left/value " and " right/value]
 
@@ -835,7 +834,6 @@ comment {
 					]
 				]	
 			]		
-}
 			default [
 				fire [TO_ERROR(script invalid-type) datatype/push type-right]
 			]

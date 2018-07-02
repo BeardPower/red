@@ -146,6 +146,7 @@ write %build/bin/sources.r set-cache [
 			%word.reds
 			%handle.reds
 			%date.reds
+			%money.reds
 		]
 		%platform/ [
 			%android.reds
