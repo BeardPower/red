@@ -466,6 +466,20 @@ money: context [
 		value
 	]
 
+	convert: func [
+		value	[red-money!]
+		return:	[red-money!]
+		
+	][
+		; shift the coefficient into position
+		value/value: value/coefficient << COEFFICIENT_SHIFT
+
+		; mix in the exponent
+		value/exponent: value/exponent and EXPONENT_MASK
+		value/value: value/value or value/exponent
+		value
+	]
+
 	add: func [return: [red-value!]][
 		#if debug? = yes [if verbose > 0 [print-line "money/add"]]
 
@@ -485,8 +499,10 @@ money: context [
 	][
 		; fast path: coefficients can be added, if the exponents are both zero
 		either all [lhs/exponent = 0 rhs/exponent = 0][
-			print-line ["fast path add: " lhs/exponent " " rhs/exponent]	
+			print-line ["fast path add: " lhs/coefficient " " lhs/exponent " " rhs/coefficient " " rhs/exponent]	
 			lhs/coefficient: lhs/coefficient + rhs/coefficient
+
+			print-line ["lhs/coefficient: " lhs/coefficient]	
 
 			; check overflow
 			either system/cpu/overflow? [
@@ -498,7 +514,7 @@ money: context [
 
 				return pack lhs
 			][
-				return lhs
+				return convert lhs
 			]
 		][					
 			; The slow path is taken if the two operands do not both have zero exponents.
@@ -549,7 +565,11 @@ money: context [
 						lhs/exponent: rhs/exponent
 						rhs/exponent: tmp
 
-						print-line ["switched exponents rhs lhs: " rhs/exponent " " lhs/exponent]
+						tmp: lhs/coefficient
+						lhs/coefficient: rhs/coefficient
+						rhs/coefficient: tmp
+
+						print-line ["switched coefficient exponents rhs lhs: " rhs/coefficient " " rhs/exponent " " lhs/coefficient " " lhs/exponent]
 					]
 
 					; add slower decrease
@@ -595,8 +615,9 @@ money: context [
 						]
 						
 						lhs/exponent: lhs/exponent - 1								
+						print-line ["add slower exponent: " lhs/exponent]
 
-						lhs/exponent <> rhs/exponent
+						lhs/exponent = rhs/exponent
 					]
 					
 					lhs/coefficient: lhs/coefficient + rhs/coefficient
@@ -757,10 +778,10 @@ money: context [
 		op			[math-op!]
 		return:		[red-money!]
 		/local
-			left		[red-money!]
-			right		[red-money!]
-			type-left 	[integer!]
-			type-right 	[integer!]
+			lhs			[red-money!]
+			rhs			[red-money!]
+			type-lhs 	[integer!]
+			type-rhs 	[integer!]
 			word		[red-word!]
 			value		[integer!]
 			size		[integer!]
@@ -770,75 +791,72 @@ money: context [
 			coefficient [red-integer!]
 			int 		[red-integer!]
 	][
-		left: as red-money! stack/arguments
-		right: as red-money! left + 1
+		lhs: as red-money! stack/arguments
+		rhs: as red-money! lhs + 1
 
-		type-left: TYPE_OF(left)
-		type-right: TYPE_OF(right)
+		type-lhs: TYPE_OF(lhs)
+		type-rhs: TYPE_OF(rhs)
 		
 		; allowed types for the right value
 		assert any [
-			type-right = TYPE_INTEGER
-			type-right = TYPE_MONEY
+			type-rhs = TYPE_INTEGER
+			type-rhs = TYPE_MONEY
 		]
 		
-		switch type-right [
+		switch type-rhs [
 			TYPE_INTEGER [
 				print-line ["type-right == TYPE_INTEGER"]
 
-				coefficient: as red-integer! right
-				;print-line ["coefficient: " coefficient/value]
-
-				; coefficient is the left shifted value by 08h
-				coefficient/value: coefficient/value << 08h
+				int: as red-integer! rhs
+				print-line ["rhs/value: " int/value]
 
 				; cast to the money type and set values accordingly to the money! spec
-				right/header: TYPE_MONEY
-				right/value: coefficient/value
+				rhs/header: TYPE_MONEY				
+				rhs/coefficient: int/value			
+				rhs/exponent: 0
+	
+				print-line ["adding " lhs/coefficient "E" lhs/exponent " and " rhs/coefficient "E" rhs/exponent]
 
-				;print-line ["adding " left/value " and " right/value]
-
-				left: do-math-op left right op
-				return left
+				lhs: do-math-op lhs rhs op
+				return lhs
 			]
 			TYPE_MONEY [
-				switch type-left [
+				switch type-lhs [
 					TYPE_INTEGER [
 						print-line ["type-left == TYPE_INTEGER"]
 
-						coefficient: as red-integer! left
-						;print-line ["coefficient: " coefficient/value]
-
-						; coefficient is the left shifted value by 08h
-						coefficient/value: coefficient/value << 08h
+						int: as red-integer! lhs
+						print-line ["lhs/value: " int/value]
 
 						; cast to the money type and set values accordingly to the money! spec
-						left/header: TYPE_MONEY
-						left/value: coefficient/value
+						lhs/header: TYPE_MONEY				
+						lhs/coefficient: int/value			
+						lhs/exponent: 0
+			
+						print-line ["adding " lhs/coefficient "E" lhs/exponent " and " rhs/coefficient "E" rhs/exponent]
 
-						print-line ["adding " left/value " and " right/value]
+						lhs: do-math-op lhs rhs op
 
-						left: do-math-op left right op
-						return left
+						return lhs
 					]	
-
 					TYPE_MONEY [
 						print-line ["both sides == TYPE_MONEY"]
 
-						left: do-math-op left right op
-						return left
+						lhs: do-math-op lhs rhs op
+
+						return lhs
 					]
 
 					default [
-						fire [TO_ERROR(script invalid-type) datatype/push type-left]
+						fire [TO_ERROR(script invalid-type) datatype/push type-lhs]
 					]
 				]	
 			]		
 			default [
-				fire [TO_ERROR(script invalid-type) datatype/push type-right]
+				fire [TO_ERROR(script invalid-type) datatype/push type-rhs]
 			]
 		]
-		left	
+		lhs	
 	]
 
 	get-rs-float: func [
@@ -980,9 +998,13 @@ money: context [
 			TYPE_INTEGER [
 				print-line ["from integer"]
 
-				int: as red-integer! spec			
+				int: as red-integer! spec		
+
+				print-line ["value: " int/value]
+
 				proto/coefficient: int/value
 				proto/exponent: 0
+				proto: convert proto			
 			]			
 			TYPE_FLOAT [
 				print-line ["from float"]
@@ -990,8 +1012,7 @@ money: context [
 
 				proto/coefficient: as integer! float/value
 				proto/exponent: 0
-
-				print-line ["coefficient: " proto/coefficient " exponent: " proto/exponent]
+				proto: convert proto			
 			]
 			TYPE_ANY_LIST [
 				; a DEC64 consists of two values: coefficient and exponent
@@ -1030,8 +1051,6 @@ money: context [
 			]
 			default [fire [TO_ERROR(script bad-to-arg) datatype/push TYPE_MONEY spec]]
 		]
-		
-		print-line ["proto/value: " proto/value >> COEFFICIENT_SHIFT " exponent: " proto/value and EXPONENT_MASK]
 
         proto
 	]
@@ -1089,7 +1108,10 @@ money: context [
 		formed: "0000000000000000000000000000000"					;-- 32 bytes wide, big enough.
 		
 		coefficient: money/value		
+		print-line ["coefficient: " money/value]
+
 		coefficient: coefficient >> 8
+		print-line ["coefficient >> 8: " coefficient]
 
 		exponent: money/value
 
