@@ -404,7 +404,7 @@ money: context [
 			; max-coefficient - 1		= 8388606
 
 			; work with absolute value
-			if value/coefficient < 0 [value/coefficient: value/coefficient * -1]
+			; if value/coefficient < 0 [value/coefficient: value/coefficient * -1]
 
 			either value/coefficient > 838860700 [
 				print-line ["coefficient > 838860700 pack-large: " value/coefficient " " value/exponent]
@@ -487,6 +487,13 @@ money: context [
 		as red-value! do-math OP_ADD
 	]
 	
+	sub: func [return: [red-value!]][
+		#if debug? = yes [if verbose > 0 [print-line "money/sub"]]
+
+		print-line ["subtracting two money!"]
+		as red-value! do-math OP_SUB
+	]
+
 	add-money: func [
 		lhs		[red-money!]
 		rhs		[red-money!]
@@ -614,6 +621,8 @@ money: context [
 							]
 						]
 						
+						print-line ["add slower coefficient: " lhs/coefficient]
+
 						lhs/exponent: lhs/exponent - 1								
 						print-line ["add slower exponent: " lhs/exponent]
 
@@ -638,11 +647,10 @@ money: context [
 			tmp				[integer!]
 
 	][
-		; This is the same as dec64_add, except that the operand in r2 has its
+		; This is the same as add-money, except that the rhs operand its
 		; coefficient complemented first.
-
-		rhs/coefficient: rhs/coefficient
-		rhs/coefficient: rhs/coefficient + 256
+		rhs/coefficient: rhs/coefficient xor -1
+		rhs/coefficient: rhs/coefficient + 1
 
 		;if there is no overflow, begin the beguine
 		either not system/cpu/overflow? [
@@ -1158,7 +1166,7 @@ money: context [
 			null
 			null
 			null
-			null
+			:sub
 			null
 			null
 			;-- Bitwise actions --
