@@ -495,6 +495,13 @@ money: context [
 		as red-value! do-math OP_SUB
 	]
 
+	multiply: func [return: [red-value!]][
+		#if debug? = yes [if verbose > 0 [print-line "money/multiply"]]
+
+		print-line ["multiplying two money!"]
+		as red-value! do-math OP_MUL
+	]
+
 	add-money: func [
 		lhs		[red-money!]
 		rhs		[red-money!]
@@ -740,6 +747,34 @@ money: context [
 			tmp				[integer!]
 
 	][
+		print-line ["in multiply-money"]
+		print-line ["lhs/exponent: " lhs/exponent " rhs/exponent: " rhs/exponent " lhs/coefficient: " lhs/coefficient " rhs/coefficient: " rhs/coefficient]
+
+		; The result is nan if one or both of the operands is nan and neither of the
+		; operands is zero.
+		either all [any [lhs/exponent = -128 rhs/exponent = -128] all [lhs/coefficient <> 0 rhs/coefficient <> 0]][
+				lhs/coefficient: 0
+				lhs/exponent: NAN
+				return lhs
+		][
+			print-line ["multiply algo"]
+			lhs/exponent: lhs/exponent + rhs/exponent
+			lhs/coefficient: lhs/coefficient * rhs/coefficient
+
+			; check overflow
+			either system/cpu/overflow? [
+				; There was overflow.
+				; Make the 110 bit coefficient in r2:r0Er8 all fit. Estimate the number of
+				; digits of excess, and increase the exponent by that many digits.
+				; We use 77/256 to convert log2 to log10.
+				print-line ["overflow"]
+
+			][
+				print-line ["no overflow; pack"]
+				return pack lhs
+			]
+		]
+
 		return lhs
 	]
 
@@ -925,9 +960,6 @@ money: context [
 						lhs/header: TYPE_MONEY				
 						lhs/coefficient: int/value			
 						lhs/exponent: 0
-			
-						print-line ["adding " lhs/coefficient "E" lhs/exponent " and " rhs/coefficient "E" rhs/exponent]
-
 						lhs: do-math-op lhs rhs op
 
 						return lhs
@@ -1180,6 +1212,13 @@ money: context [
 																	; (by increasing the head pointer by the size of a red-integer! struct)
 
 				print-line ["coefficient: " proto/coefficient " exponent: " proto/exponent]
+
+				if proto/coefficient = 0 [
+					proto/exponent: 0
+
+					return convert proto
+				]
+
 				proto: pack proto
 
 				print-line ["proto/value: " proto/value " " proto/coefficient " " proto/exponent]
@@ -1310,7 +1349,7 @@ money: context [
 			null
 			:add
 			null
-			null
+			:multiply
 			null
 			null
 			null

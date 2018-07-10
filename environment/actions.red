@@ -112,9 +112,9 @@ divide: make action! [[
 
 multiply: make action! [[
 		"Returns the product of two values"
-		value1	 [number! char! pair! tuple! vector! time!]
-		value2	 [number! char! pair! tuple! vector! time!]
-		return:  [number! char! pair! tuple! vector! time!]
+		value1	 [number! char! pair! tuple! vector! time! money!]
+		value2	 [number! char! pair! tuple! vector! time! money!]
+		return:  [number! char! pair! tuple! vector! time! money!]
 	]
 	#get-definition ACT_MULTIPLY
 ]
