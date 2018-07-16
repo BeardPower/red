@@ -103,9 +103,9 @@ add: make action! [[
 
 divide: make action! [[
 		"Returns the quotient of two values"
-		value1	 [number! char! pair! tuple! vector! time!] "The dividend (numerator)"
-		value2	 [number! char! pair! tuple! vector! time!] "The divisor (denominator)"
-		return:  [number! char! pair! tuple! vector! time!]
+		value1	 [number! char! pair! tuple! vector! time! money!] "The dividend (numerator)"
+		value2	 [number! char! pair! tuple! vector! time! money!] "The divisor (denominator)"
+		return:  [number! char! pair! tuple! vector! time! money!]
 	]
 	#get-definition ACT_DIVIDE
 ]

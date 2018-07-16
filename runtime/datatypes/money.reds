@@ -96,7 +96,8 @@ money: context [
 		/local
 			money [red-money!]
 	][
-		print-line ["money/box " verbose]
+		#if debug? = yes [if verbose > 0 [print-line "money/box"]]
+
 		money: as red-money! stack/arguments
 		money/header: TYPE_MONEY
 		money/value: value
@@ -111,8 +112,6 @@ money: context [
 	][
 		#if debug? = yes [if verbose > 0 [print-line "money/push"]]
 		
-		print-line ["money/push " verbose]
-
 		money: as red-money! stack/push*
 		money/header: TYPE_MONEY
 		money/value: value
@@ -127,13 +126,8 @@ money: context [
 	[
 		#if debug? = yes [if verbose > 0 [print-line "money/pack-large"]]
 
-		print-line ["money/pack-large"]
-
 		value/coefficient: value/coefficient / 10.0
 		value/exponent: value/exponent - 1
-
-		print-line ["coefficient: " value/coefficient " exponent: " value/exponent]
-
 		value
 	]
 	
@@ -149,18 +143,14 @@ money: context [
 	[
 		#if debug? = yes [if verbose > 0 [print-line "money/pack-increase"]]
 
-		print-line ["money/pack-increase"]
-
 		diff: diff + 1 ; TODO: look into a way to dynamically calculate the offset
 		power-of-ten: powers/diff ; powers of two start with 0, so we have to add 1 to get the correct index into powers
 
 		; restiore original value
 		diff: diff - 1
-		print-line ["power of ten: " power-of-ten " difference: " diff]
 
 		; if the difference is more than 10, the result is zero (rare)
 		if diff > 10 [
-			print-line ["diff > 10 " diff]
 			value/coefficient: 0
 			value/exponent: 0
 			return value
@@ -171,147 +161,20 @@ money: context [
 
 		; rounding fudge
 		half-power-of-ten: power-of-ten / 2
-
-		print-line ["half-power-of-ten: " half-power-of-ten]
-		
+	
 		; add the rounding fudge
 		value/coefficient: value/coefficient + half-power-of-ten
 
-		print-line ["coefficient: " value/coefficient]
-
 		; divide by the power of ten
 		value/coefficient: value/coefficient / power-of-ten
-
-		print-line ["coefficient / power: " value/coefficient]
-		
+	
 		; increase the exponent by the difference
 		value/exponent: value/exponent + diff
-
-		print-line ["exponent: " value/exponent]
 
 		value
 	]	
 
-	comment {
-	; The slow path is taken if the two operands do not both have zero exponents.
-	add-slow: func [
-		lhs 	[red-money!]
-		rhs		[red-money!]
-		return:	[red-money!]
-	][
-		; Any of the exponents is nan
-		either any [lhs/exponent = 128 rhs/exponent = 128][
-			lhs/coefficient: 0
-			lhs/exponent: NAN
-			return lhs
-		]
-		[			
-			; Are the two exponents the same? This will happen often, especially with
-			; money values.
-			either lhs/exponent = rhs/exponent [
-
-				; The exponents match so we may add now. Zero out the exponents so there
-				; will be no carry into the coefficients when the coefficients are added.
-				; If the result is zero, then return the normal zero.
-				lhs/coefficient: lhs/coefficient + rhs/coefficient
-
-				; check overflow
-    			either system/cpu/overflow? [
-					print-line ["add overflow"]
-					lhs/coefficient: lhs/coefficient / 2
-				][
-					; if the coefficient is zero, the exponent is zero
-					if lhs/coefficient = 0 [lhs/exponent: 0]
-				]
-			]
-			; The slower path is taken when neither operand is nan, and their
-			; exponents are different. Before addition can take place, the exponents
-			; must be made to match. Swap the numbers if the second exponent is greater
-			; than the first.
-		]				
-
-		lhs
-	]
-	}
-
-	comment {
-	; The slower path is taken when neither operand is nan, and their
-	; exponents are different. Before addition can take place, the exponents
-	; must be made to match. Swap the numbers if the second exponent is greater
-	; than the first.
-	add-slower: func [
-		value-left 	[float!]
-		value-right	[float!]
-		return:	[float!]
-		/local
-			exponent-left 		[integer!]
-			exponent-right 		[integer!]
-			coefficient-left 	[float!]
-			coefficient-right 	[float!]
-			difference			[integer!]
-			power-of-ten		[float!]
-			temp				[float!]
-	][		
-		exponent-left: as integer! value-left and EXPONENT_MASK
-		exponent-right: as integer! value-right and EXPONENT_MASK
-		coefficient-left: value-left / SHIFT_MULTIPLY
-		coefficient-right: value-right / SHIFT_MULTIPLY
-
-		; swap
-		if exponent-right > exponent-left [
-			tmp: exponent-left
-			exponent-left: exponent-right
-			exponent-right: exponent-left
-		]
-
-		; prepare the first coefficient
-		value-left: coefficient-left
-
-		; add slower decrease
-		; The coefficients are not the same. Before we can add, they must be the same.
-		; We will try to decrease the first exponent. When we decrease the exponent
-		; by 1, we must also multiply the coefficient by 10. We can do this as long as
-		; there is no overflow. We have 8 extra bits to work with, so we can do this
-		; at least twice, possibly more.
-		until [
-			value-left: value-left * 10.0
-			; check on overflow
-			exponent-left: exponent-left - 1
-		
-			exponent-left <> exponent-right
-		]
-		
-		value-left: value-left + coefficient-right
-
-		; pack
-
-		; slower increase
-		; We cannot decrease the first exponent any more, so we must instead try to
-		; increase the second exponent, which will result in a loss of significance.
-		; That is the heartbreak of floating point.
-
-		; Determine how many places need to be shifted. If it is more than 17, there is
-		; nothing more to add.
-
-		difference: exponent-left - exponent-right
-		either difference > 17 [
-			return value-left
-		][
-			power-of-ten: powers/difference
-			coefficient-right: coefficient-right / power-of-ten
-			either coefficient-right = 0 [
-				return value-left
-			][
-				value-left: coefficient-left + coefficient-right
-
-				; pack
-			]
-		]
-
-	]
-	}
-
-	; the exponent is too big, so it's attempted to scale it back by decreasing the exponent of the DEC64 value
+		; the exponent is too big, so it's attempted to scale it back by decreasing the exponent of the DEC64 value
 	; this can salvage values in a small set of cases, because the decimal values are decreased
 	pack-decrease: func [
 		value 		[red-money!]
@@ -321,8 +184,6 @@ money: context [
 	][		
 		#if debug? = yes [if verbose > 0 [print-line "money/pack-decrease"]]
 
-		print-line ["money/pack-decrease"]
-
 		; decrease the exponent until it is smaller than MAX_EXPONENT
 		while [value/exponent > MAX_EXPONENT][
 			; multiply the coefficient by 10			
@@ -330,8 +191,6 @@ money: context [
 
 			; if we overflow, we failed to salvage and bail out early
 			if system/cpu/overflow? [
-				print-line ["overflow pack-decrease; bail out with NAN"]
-
 				value/coefficient: 0
 				value/exponent: NAN
 
@@ -341,9 +200,6 @@ money: context [
 				return value
 			]
 
-			print-line ["new coefficient: " value/coefficient]
-			print-line ["new exponent: " value/exponent - 1]		
-
 			; decrease the exponent
 			value/exponent: value/exponent - 1		
 		]
@@ -352,7 +208,6 @@ money: context [
 		carry: carry + 0
 
 		either carry <> 0 [
-			print-line ["carry > 0; number is still to big; bail out with NAN"]
 			fire [TO_ERROR(math overflow)]
 
 			value/coefficient: 0
@@ -365,7 +220,6 @@ money: context [
 		value/value: value/coefficient << COEFFICIENT_SHIFT	; shift the coefficient into place
 		value/value: value/value or value/exponent			; add the exponent value		
 		
-		print-line ["return value: " value]
 		value		
 	]
 
@@ -385,8 +239,7 @@ money: context [
 		until [
 			; If the exponent is greater than 127, then the number is too big and we bail out early.
 			; But it might still be possible to salvage a value.
-			if value/exponent > 127 [
-				print-line ["exponent > 127: " value/exponent " call pack-decrease"]
+			if value/exponent > 127 [		
 				return pack-decrease value
 			]
 
@@ -408,22 +261,17 @@ money: context [
 			; if value/coefficient < 0 [value/coefficient: value/coefficient * -1]
 
 			either value/coefficient > 838860700 [
-				print-line ["coefficient > 838860700 pack-large: " value/coefficient " " value/exponent]
 				value: pack-large value
 
 				; the loop is started over
 			][
 				if value/coefficient > 8388606 [
-					print-line ["coefficient > 8388606 increase diff_coefficient: " diff_coefficient]
 					diff_coefficient: diff_coefficient + 1
 				]
 
 				diff_exponent: MIN_EXPONENT - value/exponent
-				print-line ["diff_exponent: " diff_exponent]
-				print-line ["diff_coefficient: " diff_coefficient]
 
 				if value/coefficient > 83886069 [
-					print-line ["coefficient > 83886069 increase diff_coefficient: " diff_coefficient]
 					diff_coefficient: diff_coefficient + 1
 				]
 
@@ -431,8 +279,6 @@ money: context [
 				diff_coefficient: either diff_coefficient > diff_exponent [diff_coefficient][diff_exponent]
 
 				either diff_coefficient > 0 [
-					print-line ["diff_coefficient: " diff_coefficient " diff_exponent: " diff_exponent]
-					print-line ["diff_coefficient > 0 pack-increase: " value/coefficient " " value/exponent]
 					value: pack-increase value diff_coefficient
 
 					; the loop is started over
@@ -440,7 +286,6 @@ money: context [
 				[			
 					; if the coefficient is zero, also zero the exp
 					if value/coefficient = 0 [
-						print-line ["coefficient = 0, set exponent to 0"]
 						value/exponent: 0
 					]
 				]
@@ -451,18 +296,12 @@ money: context [
 			any [value/coefficient <> 0 value/exponent <> NAN]
 		]
 
-		print-line ["preparing value: " value/coefficient " " value/exponent]
-
 		; shift the coefficient into position
 		value/value: value/coefficient << COEFFICIENT_SHIFT
-
-		print-line ["value after <<: " value/value]
 
 		; mix in the exponent
 		exponent: value/exponent and EXPONENT_MASK
 		value/value: value/value or exponent
-
-		print-line ["final return value from pack: " value/value]
 
 		value
 	]
@@ -470,36 +309,42 @@ money: context [
 	convert: func [
 		value	[red-money!]
 		return:	[red-money!]
+		/local
+			exponent [integer!]
 		
 	][
 		; shift the coefficient into position
-		value/value: value/coefficient << COEFFICIENT_SHIFT
+		value/value: value/coefficient << COEFFICIENT_SHIFT		
 
 		; mix in the exponent
-		value/exponent: value/exponent and EXPONENT_MASK
-		value/value: value/value or value/exponent
+		exponent: value/exponent and EXPONENT_MASK
+		value/value: value/value or exponent
+
 		value
 	]
 
 	add: func [return: [red-value!]][
 		#if debug? = yes [if verbose > 0 [print-line "money/add"]]
 
-		print-line ["adding two money!"]
 		as red-value! do-math OP_ADD
 	]
 	
 	sub: func [return: [red-value!]][
 		#if debug? = yes [if verbose > 0 [print-line "money/sub"]]
 
-		print-line ["subtracting two money!"]
 		as red-value! do-math OP_SUB
 	]
 
 	multiply: func [return: [red-value!]][
 		#if debug? = yes [if verbose > 0 [print-line "money/multiply"]]
 
-		print-line ["multiplying two money!"]
 		as red-value! do-math OP_MUL
+	]
+
+	divide: func [return: [red-value!]][
+		#if debug? = yes [if verbose > 0 [print-line "money/divide"]]
+
+		as red-value! do-math OP_DIV
 	]
 
 	add-money: func [
@@ -514,10 +359,7 @@ money: context [
 	][
 		; fast path: coefficients can be added, if the exponents are both zero
 		either all [lhs/exponent = 0 rhs/exponent = 0][
-			print-line ["fast path add: " lhs/coefficient " " lhs/exponent " " rhs/coefficient " " rhs/exponent]	
 			lhs/coefficient: lhs/coefficient + rhs/coefficient
-
-			print-line ["lhs/coefficient: " lhs/coefficient]	
 
 			; check overflow
 			either system/cpu/overflow? [
@@ -525,16 +367,12 @@ money: context [
 				; pack knows how to do that.
 				lhs/coefficient: lhs/coefficient / 2
 
-				print-line ["overflow in fast add; call pack with: " lhs/coefficient " " lhs/exponent]
-
 				return pack lhs
 			][
 				return convert lhs
 			]
 		][					
 			; The slow path is taken if the two operands do not both have zero exponents.
-			print-line ["slow path add: " lhs/exponent " " rhs/exponent]
-
 			; Any of the exponents is nan
 			either any [lhs/exponent = -128 rhs/exponent = -128][
 				lhs/coefficient: 0
@@ -548,20 +386,13 @@ money: context [
 					; The exponents match so we may add now. Zero out the exponents so there
 					; will be no carry into the coefficients when the coefficients are added.
 					; If the result is zero, then return the normal zero.
-
-					print-line ["exponents are the same; add them together: " lhs/coefficient " " rhs/coefficient]
-
 					lhs/coefficient: lhs/coefficient + rhs/coefficient
-
-					print-line ["lhs/coefficient: " lhs/coefficient]
 
 					; check overflow
 					either system/cpu/overflow? [
 						; If there was an overflow (extremely unlikely) then we must make it fit.
 						; pack knows how to do that.
 						lhs/coefficient: lhs/coefficient / 2
-
-						print-line ["overflow in equal; call pack with: " lhs/coefficient " " lhs/exponent]
 
 						return pack lhs
 
@@ -576,10 +407,8 @@ money: context [
 					; exponents are different. Before addition can take place, the exponents
 					; must be made to match. Swap the numbers if the second exponent is greater
 					; than the first.
-
-					; swap
+					; swap exponents
 					if rhs/exponent > lhs/exponent [
-						print-line ["switch exponents rhs lhs " rhs/exponent " > " lhs/exponent]
 						tmp: lhs/exponent
 						lhs/exponent: rhs/exponent
 						rhs/exponent: tmp
@@ -587,8 +416,6 @@ money: context [
 						tmp: lhs/coefficient
 						lhs/coefficient: rhs/coefficient
 						rhs/coefficient: tmp
-
-						print-line ["switched coefficient exponents rhs lhs: " rhs/coefficient " " rhs/exponent " " lhs/coefficient " " lhs/exponent]
 					]
 
 					; add slower decrease
@@ -602,9 +429,6 @@ money: context [
 
 						; check on overflow
 						if system/cpu/overflow? [
-							print-line ["add slower overflow"]
-							print-line ["add slower increase"]
-
 							; add slower increase
 							; We cannot decrease the first exponent any more, so we must instead try to
 							; increase the second exponent, which will result in a loss of significance.
@@ -612,7 +436,6 @@ money: context [
 
 							; Determine how many places need to be shifted. If it is more than 7, there is
 							; nothing more to add.
-
 							diff: lhs/exponent - rhs/exponent
 							either diff > 7 [
 								; too small to matter
@@ -627,16 +450,12 @@ money: context [
 									return lhs
 								][
 									lhs/coefficient: lhs/coefficient + rhs/coefficient
-									print-line ["call pack from add-slower-increase"]
 									return pack lhs
 								]
 							]
 						]
 						
-						print-line ["add slower coefficient: " lhs/coefficient]
-
-						lhs/exponent: lhs/exponent - 1								
-						print-line ["add slower exponent: " lhs/exponent]
+						lhs/exponent: lhs/exponent - 1
 
 						lhs/exponent = rhs/exponent
 					]
@@ -663,19 +482,14 @@ money: context [
 		; coefficient complemented first.
 		; rhs/coefficient: rhs/coefficient xor -1
 		; rhs/coefficient: rhs/coefficient + 1
-		print-line ["rhs/coefficient: " rhs/coefficient]
 		rhs/coefficient: (not rhs/coefficient) + 1
-		print-line ["not rhs/coefficient: " rhs/coefficient]
 
 		;if there is no overflow, begin the beguine
 		either not system/cpu/overflow? [
-			print-line ["no overflow in sub; call add"]
-
 			return add-money lhs rhs
 		][
 			; The subtrahend coefficient is -8388608. This value cannot easily be
-			; complemented, so take the slower path. This should be extremely rare.
-		
+			; complemented, so take the slower path. This should be extremely rare.		
 			either any [lhs/exponent = 128 rhs/exponent = 128][
 				lhs/coefficient: 0
 				lhs/exponent: 128
@@ -685,12 +499,9 @@ money: context [
 			[
 				; swap
 				if rhs/exponent > lhs/exponent [
-					print-line ["switch exponents rhs lhs " rhs/exponent " > " lhs/exponent]
 					tmp: lhs/exponent
 					lhs/exponent: rhs/exponent
 					rhs/exponent: tmp
-
-					print-line ["switched exponents rhs lhs: " rhs/exponent " " lhs/exponent]
 				]
 
 				; The coefficients are not the same. Before we can add, they must be the same.
@@ -703,9 +514,6 @@ money: context [
 
 					; check on overflow
 					if system/cpu/overflow? [
-						print-line ["sub slower overflow"]
-						print-line ["sub slower increase"]
-
 						; sub slower increase
 						; We cannot decrease the first exponent any more, so we must instead try to
 						; increase the second exponent, which will result in a loss of significance.
@@ -713,12 +521,10 @@ money: context [
 
 						; Determine how many places need to be shifted. If it is more than 7, there is
 						; nothing more to add.
-
 						diff: lhs/exponent - rhs/exponent
 						either diff > 7 [
-							print-line ["subtract_underflow; call pack"]
 							; too small to matter
-							; call pack with the oritinal number
+							; call pack with the original value
 							return pack lhs
 						][
 							power-of-ten: powers/diff
@@ -745,11 +551,7 @@ money: context [
 			diff 			[integer!]
 			power-of-ten 	[integer!]
 			tmp				[integer!]
-
 	][
-		print-line ["in multiply-money"]
-		print-line ["lhs/exponent: " lhs/exponent " rhs/exponent: " rhs/exponent " lhs/coefficient: " lhs/coefficient " rhs/coefficient: " rhs/coefficient]
-
 		; The result is nan if one or both of the operands is nan and neither of the
 		; operands is zero.
 		either all [any [lhs/exponent = -128 rhs/exponent = -128] all [lhs/coefficient <> 0 rhs/coefficient <> 0]][
@@ -757,9 +559,8 @@ money: context [
 				lhs/exponent: NAN
 				return lhs
 		][
-			print-line ["multiply algo"]
-			lhs/exponent: lhs/exponent + rhs/exponent
 			lhs/coefficient: lhs/coefficient * rhs/coefficient
+			lhs/exponent: lhs/exponent + rhs/exponent
 
 			; check overflow
 			either system/cpu/overflow? [
@@ -767,10 +568,8 @@ money: context [
 				; Make the 110 bit coefficient in r2:r0Er8 all fit. Estimate the number of
 				; digits of excess, and increase the exponent by that many digits.
 				; We use 77/256 to convert log2 to log10.
-				print-line ["overflow"]
-
+				print-line ["TODO: overflow"]
 			][
-				print-line ["no overflow; pack"]
 				return pack lhs
 			]
 		]
@@ -788,6 +587,33 @@ money: context [
 			tmp				[integer!]
 
 	][
+		case [
+			; if the dividend is zero, the quotient is zero
+			all [lhs/coefficient = 0 lhs/exponent <> -128][
+				lhs/exponent: 0
+				return lhs
+			]
+			; if either the divident is nan or the divisor is zero
+			any [lhs/exponent = -128 rhs/coefficient = 0]
+			[
+				lhs/exponent: -128
+				return lhs
+			]
+			true [
+				; We want to get as many bits into the quotient as possible in order to capture
+				; enough significance. But if the quotient has more than 64 bits, then there
+				; will be a hardware fault. To avoid that, we compare the magnitudes of the
+				; dividend coefficient and divisor coefficient, and use that to scale the
+				; dividend to give us a good quotient.
+
+				; Multiply the dividend by the scale factor, and divide that 128 bit result by
+				; the divisor.  Because of the scaling, the quotient is guaranteed to use most
+				; of the 64 bits in r0, and never more. Reduce the final exponent by the number
+				; of digits scaled.
+				lhs/coefficient: lhs/coefficient / rhs/coefficient
+				lhs/exponent: lhs/exponent - rhs/exponent
+			]
+		]
 		return lhs
 	]
 
@@ -797,12 +623,6 @@ money: context [
 		type	[integer!]
 		return: [red-money!]
 	][
-		print-line ["opping two money!"]
-		print-line ["coefficient-left: " lhs/coefficient]
-		print-line ["exponent-left: " lhs/exponent]
-		print-line ["coefficient-right: " rhs/coefficient]
-		print-line ["exponent-right: " rhs/exponent]
-
 		switch type [
 			OP_ADD [
 				return add-money lhs rhs
@@ -838,18 +658,10 @@ money: context [
 			n			[integer!]
 			v			[integer!]
 			tp			[byte-ptr!]
-			int 		[red-integer!]
-			factor	 	[integer!]
-			decimals	[integer!]
-			int-value	[integer!]
-			float-value	[float!]
-			value		[red-float!]
-			scale		[red-float!]
-			refinement	[logic!]
-			rounded		[red-float!]
+			int 		[red-integer!]			
+			int-value	[integer!]			
+			value		[red-value!]
 			tmp			[red-value!]
-			coefficient [integer!]
-			exponent 	[integer!]
 	][
 		lhs: as red-money! stack/arguments
 		rhs: as red-money! lhs + 1
@@ -866,95 +678,30 @@ money: context [
 		
 		switch type-rhs [
 			TYPE_INTEGER [
-				print-line ["type-right == TYPE_INTEGER"]
-
 				int: as red-integer! rhs
-				print-line ["rhs/value: " int/value]
 
 				; cast to the money type and set values accordingly to the money! spec
 				rhs/header: TYPE_MONEY				
 				rhs/coefficient: int/value			
 				rhs/exponent: 0
 	
-				print-line ["adding " lhs/coefficient "E" lhs/exponent " and " rhs/coefficient "E" rhs/exponent]
-
 				lhs: do-math-op lhs rhs op
+
 				return lhs
 			]
 			TYPE_FLOAT [
-				print-line ["type-right == TYPE_FLOAT"]
+				value: as red-value! rhs
+				value/header: TYPE_FLOAT
 
-				refinement: false
-
-				value: as red-float! rhs
-				print-line ["value/value: " value/value]
-
-				factor: 1
-				decimals: 0
-				
-				int-value: as integer! value/value	
-				print-line ["int-value: " int-value]
-
-				float-value: 0.0
-				print-line ["float-value: " float-value]
-
-				scale: declare red-float! 0
-
-				print-line ["scale: " scale]
-
-				scale/value: 0.000000001
-
-				print-line ["scale: " scale/value]
-
-				print-line ["entering loop"]
-				print-line ["float-value: " float-value " value/value: " value/value]				
-				rounded: declare red-float! 0
-				rounded/value: value/value
-				coefficient: as integer! rounded/value
-
-				print-line ["rounded/value: " rounded/value]
-				rounded: as red-float! float/round as red-value! rounded scale refinement refinement refinement refinement refinement refinement
-				print-line ["rounded/value: " rounded/value]
-				rounded/value: rounded/value / factor
-
-				print-line ["rounded/value: " rounded/value]
-
-				print-line ["entering loop"]
-
-				while [all [factor < 1000000000 rounded/value <> value/value]] [
-					factor: factor * 10
-					decimals: decimals + 1				
-					print-line ["factor: " factor " #decimals: " decimals]
-
-					rounded/value: value/value * factor
-					coefficient: as integer! rounded/value
-					rounded: as red-float! float/round as red-value! rounded scale refinement refinement refinement refinement refinement refinement
-					rounded/value: rounded/value / factor
-					print-line ["rounded/value: " rounded/value]
-					
-				]				
-				print-line ["factor: " factor " #decimals: " decimals]
-
-				print-line ["coefficient: " coefficient " exponent: " decimals]
-				
-				;cast to the money type and set values accordingly to the money! spec
-				rhs/header: TYPE_MONEY				
-				rhs/coefficient: coefficient			
-				rhs/exponent: either decimals = 0 [0][decimals * -1]
-
-				print-line ["rhs/coefficient: " rhs/coefficient " rhs/exponent: " rhs/exponent]
-
+				rhs: to rhs value TYPE_FLOAT							
 				lhs: do-math-op lhs rhs op
-				return lhs
 
+				return lhs
 			]
 			TYPE_MONEY [
 				switch type-lhs [
 					TYPE_INTEGER [
-						print-line ["type-left == TYPE_INTEGER"]
-
 						int: as red-integer! lhs
-						print-line ["lhs/value: " int/value]
 
 						; cast to the money type and set values accordingly to the money! spec
 						lhs/header: TYPE_MONEY				
@@ -965,9 +712,6 @@ money: context [
 						return lhs
 					]	
 					TYPE_MONEY [
-						print-line ["both sides == TYPE_MONEY"]
-						print-line ["lhs/coefficient: " lhs/coefficient " lhs/exponent: " lhs/exponent " rhs/coefficient: " rhs/coefficient " rhs/exponent: " rhs/exponent]
-
 						lhs: do-math-op lhs rhs op
 
 						return lhs
@@ -1022,61 +766,49 @@ money: context [
 		value: coefficient/value * SHIFT_MULTIPLY 			; shift the coefficient into place
 		value: value + exponent								; add the exponent to the lower 8 bits
 		
-		print-line ["money/from-block: coefficient: " coefficient/value " exponent: " exponent " value: " value]
-
 		value
 	]
 
 	format: func [
-		coefficient [integer!]
-		exponent	[integer!]
-		return:		[c-string!]
+		value 	[red-money!]
+		return: [c-string!]
 		/local
+			coefficient		[integer!]
+			exponent		[integer!]
 			formed 			[c-string!]
 			power-of-ten	[integer!]
+			sign 			[c-string!]
 			integral-part	[integer!]
 			fractional-part	[integer!]
 	]
 	[
 		formed: "0000000000000000000000000000000" ;-- 32 bytes wide, big enough.
+		sign: ""
 
-		print-line ["in format"]
-		print-line ["coefficient: " coefficient " exponent: " exponent]		
+		coefficient: value/coefficient
+		exponent: value/exponent
+
+		; absolute value of coefficient		
+		if coefficient < 0 [sign: "-" coefficient: (not coefficient) + 1]
 
 		; positive exponents are appended zeros to the coefficient
 		; negative exponents are appending zeros to 0,
 		case [
-			exponent = 0 [sprintf [formed "$%d.00" coefficient]]
+			exponent = 0 [sprintf [formed "%s$%d.00" sign coefficient]]
 			exponent > 0 [
-				sprintf [formed "$%d%0*d.00" coefficient exponent 0]
+				sprintf [formed "%s$%d%0*d.00" sign coefficient exponent 0]
 			]
 			true [
-				; absolute value of coefficient and coefficient
 				exponent: (exponent * -1) + 1
 				power-of-ten: powers/exponent
 				integral-part: coefficient / power-of-ten
 
 				either integral-part = 0 [
-					; absolute value of coefficient
-					either coefficient < 0 [
-						coefficient: (not coefficient) + 1
-
-						sprintf [formed "$-0.%0*d" exponent - 1 coefficient]		
-					]
-					[
-						sprintf [formed "$0.%0*d" exponent - 1 coefficient]
-					]
+					sprintf [formed "%s$0.%0*d" sign exponent - 1 coefficient]		
 				]
 				[
-					; absolute value of fractional part
-					either coefficient < 0 [
-						fractional-part: (coefficient * -1) - (integral-part * -1 * power-of-ten)					
-					]
-					[
-						fractional-part: coefficient - (integral-part * power-of-ten)					
-					]
-					
-					sprintf [formed "$%d.%0*d" integral-part exponent - 1 fractional-part]
+					fractional-part: coefficient - (integral-part * power-of-ten)					
+					sprintf [formed "%s$%d.%0*d" sign integral-part exponent - 1 fractional-part]					
 				]		
 			]
 		]
@@ -1084,8 +816,29 @@ money: context [
 		formed
 	]
 
-	;-- Actions --
+	msb-DeBruijn-32: func [
+		value	[integer!]
+		return:	[integer!]
+		/local
+			index							[integer!]
+			multiply-DeBruijn-Bit-Position 	[int-ptr!]
+	][
 
+		multiply-DeBruijn-Bit-Position: [0 9 1 10 13 21 2 29 11 14 16 18 22 25 3 30 8 12 20 28 15 17 24 7 19 27 23 6 26 5 4 31]
+
+    	value: value or (value >> 1) ; first round down to one less than a power of 2
+		value: value or (value >> 2)		
+    	value: value or (value >> 4)		
+    	value: value or (value >> 8)		
+    	value: value or (value >> 16)		
+		value: value * 07C4ACDDh >> 27 + 1 ; series index starts with 1
+
+		index: value
+
+     	multiply-DeBruijn-Bit-Position/index
+	]
+
+	;-- Actions --
     make: func [
 		proto	[red-money!]
 		spec	[red-value!]
@@ -1097,41 +850,15 @@ money: context [
 			coefficient [integer!]
 			exponent 	[integer!]
 	][
-		; print-line ["money/make " verbose]
-
 		#if debug? = yes [if verbose > 0 [print-line "money/make"]]
-
-		;either TYPE_OF(spec) = TYPE_LOGIC [
-		;	bool: as red-logic! spec
-		;	money: as red-money! proto
-		;	money/header: TYPE_MONEY
-		;	money/value: as-money bool/value
-		;	money
-		;][
-		;as red-money!; to proto spec type
-		;]
-
-		; print-line ["header is set to " TYPE_MONEY]
-
-		; print-line ["data1: " spec/data1 " data2: " spec/data2 " data3: " spec/data3]
-
-		; money/coefficient: as-integer spec/data2
-		; money/exponent: as-integer spec/data3
-
-		; print-line ["switch"]
-		; print-line ["money/value: " money/value]
-		; print-line ["proto/value: " proto/value]
 
         ; cast the source spec accordingly to money!
 		switch TYPE_OF(spec) [
 			TYPE_INTEGER
 			TYPE_CHAR [
-				print-line ["in switch"]
 				int: as red-integer! spec			
 				coefficient: int/value
 				exponent: 0
-
-				print-line ["after setting"]
 			]			
             default [print-line ["fire"] fire [TO_ERROR(script bad-to-arg) datatype/push type spec] print-line ["after fire"]]
         ]
@@ -1150,52 +877,59 @@ money: context [
 		type	[integer!]
 		return:	[red-money!]
 		/local
-			bool 			[red-logic!]
-			money			[red-money!]
-			float 			[red-float!]			
-			int   			[red-integer!]
-			value			[float!]
-			blk				[red-block!]
-			values 			[struct! [coefficient [integer!] exponent[integer!]]]
+			bool 		[red-logic!]
+			money		[red-money!]
+			float		[red-float!]
+			value		[float!]
+			int   		[red-integer!]
+			blk			[red-block!]
+			decimals	[integer!]
+			factor		[integer!]
+			coefficient [integer!]
+			exponent 	[integer!]
 	][
-		; print-line ["money/to verbosity: " verbose]
-
 		#if debug? = yes [if verbose > 0 [print-line "money/to"]]
 
 		if TYPE_OF(spec) = TYPE_MONEY [return as red-money! spec] ; type cast to red-money!
-
-		;print-line ["type of spec: " TYPE_OF(spec)]
-
-		;print-line ["coefficient: " proto/coefficient "exponent: " proto/exponent]
-
-		print-line ["type: " TYPE_OF(spec) " " spec/data1 " " spec/data2 " " spec/data3]
 
 		proto/header: type
 
 		switch TYPE_OF(spec) [
 			TYPE_CHAR [
 				proto/value: spec/data2
-
-				print-line ["from char"]
 			]
 			TYPE_INTEGER [
-				print-line ["from integer"]
-
 				int: as red-integer! spec		
-
-				print-line ["value: " int/value]
-
 				proto/coefficient: int/value
 				proto/exponent: 0
 				proto: convert proto			
 			]			
 			TYPE_FLOAT [
-				print-line ["from float"]
 				float: as red-float! spec
+				factor: 1
+				decimals: 0
 
-				proto/coefficient: as integer! float/value
-				proto/exponent: 0
-				proto: convert proto			
+				value: float/value
+				;int: as red-integer! spec
+				;int/value: as integer! float/value
+				int: declare red-integer!
+				int/value: as integer! float/value
+				; print-line ["int: " int/value]
+				; print-line ["float: " value]
+
+				while [all [factor < 1000000000 (as float! int/value) <> value]] [
+					factor: factor * 10
+					decimals: decimals + 1				
+					
+					value: float/value * factor
+					int/value: as integer! value
+				]				
+
+				proto/coefficient: int/value
+
+				; fractional values have a negative exponent
+				proto/exponent: decimals * -1
+				proto: convert proto
 			]
 			TYPE_ANY_LIST [
 				; a DEC64 consists of two values: coefficient and exponent
@@ -1208,10 +942,8 @@ money: context [
 																	; (by using the head pointer of the block)
 				proto/coefficient: int/value										
 				int: int + 1
-				proto/exponent: int/value 								; get second value from the block: exponent
+				proto/exponent: int/value							; get second value from the block: exponent
 																	; (by increasing the head pointer by the size of a red-integer! struct)
-
-				print-line ["coefficient: " proto/coefficient " exponent: " proto/exponent]
 
 				if proto/coefficient = 0 [
 					proto/exponent: 0
@@ -1219,25 +951,7 @@ money: context [
 					return convert proto
 				]
 
-				proto: pack proto
-
-				print-line ["proto/value: " proto/value " " proto/coefficient " " proto/exponent]
-
-				comment {
-				print-line ["test-pack-increase"]
-
-				values: declare struct! [coefficient [integer!] exponent[integer!]]
-
-				values: pack-increase 500 3 2
-				print-line ["values/coefficient: " values/coefficient " values/exponent: " values/exponent]
-
-				print-line ["test-pack-large"]
-				values: pack-large 500 3
-				print-line ["values/coefficient: " values/coefficient " values/exponent: " values/exponent]
-				}
-				
-				; early return, as the returned value has coefficient and exponent already in the correct place
-				return proto
+				proto: pack proto				
 			]
 			default [fire [TO_ERROR(script bad-to-arg) datatype/push TYPE_MONEY spec]]
 		]
@@ -1256,23 +970,14 @@ money: context [
 			coefficient [integer!]
 			exponent 	[integer!]
 	][
-		print-line ["money/form " verbose]
-
 		#if debug? = yes [if verbose > 0 [print-line "money/form"]]
 
-		coefficient: money/value
-		coefficient: coefficient >> COEFFICIENT_SHIFT
-
-		exponent: money/value
-
 		; sign extend the exponent
-		exponent: exponent << 24 >> 24
-
-		either exponent = -128 [
+		either money/exponent = -128 [
 			formed: "NAN"	
 		]
 		[
-			formed: format coefficient exponent
+			formed: format money
 		]
 
 		string/concatenate-literal buffer formed
@@ -1295,41 +1000,13 @@ money: context [
 			exponent 	[integer!]
 			sign 		[c-string!]
 	][
-		print-line ["money/mold "]
-
 		#if debug? = yes [if verbose > 0 [print-line "money/mold"]]
 		
-		formed: "0000000000000000000000000000000"					;-- 32 bytes wide, big enough.
-		
-		print-line ["direct values: " money/coefficient " " money/exponent]
-
-		coefficient: money/value		
-		print-line ["coefficient: " money/value]
-
-		coefficient: coefficient >> 8
-		print-line ["coefficient >> 8: " coefficient]
-
-		exponent: money/value
-
-		; sign extend the exponent
-		exponent: exponent << 24 >> 24
-		
-		either exponent = -128 [
-			formed: "NAN"	
-		]
-		[
-			formed: format coefficient exponent
-		]
-		
-		string/concatenate-literal buffer formed
-		part - length? formed							;@@ optimize by removing length?
+		form money buffer arg part
 	]
 
 	init: does [
 		#if debug? = yes [print-line "debug yes"]
-		if verbose > 0 [print-line "verbose > 1"]
-
-		print-line "money/init here"
 		
 		datatype/register [
 			TYPE_MONEY
@@ -1348,7 +1025,7 @@ money: context [
 			;-- Scalar actions --
 			null
 			:add
-			null
+			:divide
 			:multiply
 			null
 			null
@@ -1403,7 +1080,5 @@ money: context [
 			null			;update
 			null			;write
 		]
-
-		print-line "money/after registering"
 	]
 ]
