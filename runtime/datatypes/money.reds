@@ -146,7 +146,7 @@ money: context [
 		diff: diff + 1 ; TODO: look into a way to dynamically calculate the offset
 		power-of-ten: powers/diff ; powers of two start with 0, so we have to add 1 to get the correct index into powers
 
-		; restiore original value
+		; restore original value
 		diff: diff - 1
 
 		; if the difference is more than 10, the result is zero (rare)
@@ -551,6 +551,7 @@ money: context [
 			diff 			[integer!]
 			power-of-ten 	[integer!]
 			tmp				[integer!]
+			digits			[integer!]
 	][
 		; The result is nan if one or both of the operands is nan and neither of the
 		; operands is zero.
@@ -559,19 +560,25 @@ money: context [
 				lhs/exponent: NAN
 				return lhs
 		][
-			lhs/coefficient: lhs/coefficient * rhs/coefficient
 			lhs/exponent: lhs/exponent + rhs/exponent
+			lhs/coefficient: lhs/coefficient * rhs/coefficient
 
 			; check overflow
-			either system/cpu/overflow? [
-				; There was overflow.
-				; Make the 110 bit coefficient in r2:r0Er8 all fit. Estimate the number of
+			if system/cpu/overflow? [
+				; There was an overflow.
+				; Make the 110 bit coefficient all fit. Estimate the number of
 				; digits of excess, and increase the exponent by that many digits.
 				; We use 77/256 to convert log2 to log10.
-				print-line ["TODO: overflow"]
-			][
-				return pack lhs
+				tmp: lhs/coefficient
+
+				if lhs/coefficient < 0 [tmp: lhs/coefficient * -1]
+				
+				digits: (msb-DeBruijn-32 as byte-ptr! tmp) * 77 >> COEFFICIENT_SHIFT + 2
+				lhs/exponent: lhs/exponent + digits
+				lhs/coefficient: lhs/coefficient / powers/digits
 			]
+
+			lhs: pack lhs
 		]
 
 		return lhs
@@ -584,8 +591,11 @@ money: context [
 		/local
 			diff 			[integer!]
 			power-of-ten 	[integer!]
-			tmp				[integer!]
-
+			dividend		[integer!]
+			divisor			[integer!]
+			scale-factor	[integer!]
+			msb_dividend	[integer!]
+			msb_divisor		[integer!]
 	][
 		case [
 			; if the dividend is zero, the quotient is zero
@@ -600,18 +610,57 @@ money: context [
 				return lhs
 			]
 			true [
-				; We want to get as many bits into the quotient as possible in order to capture
-				; enough significance. But if the quotient has more than 64 bits, then there
-				; will be a hardware fault. To avoid that, we compare the magnitudes of the
-				; dividend coefficient and divisor coefficient, and use that to scale the
-				; dividend to give us a good quotient.
+				until [ 
+					; We want to get as many bits into the quotient as possible in order to capture
+					; enough significance. But if the quotient has more than 64 bits, then there
+					; will be a hardware fault. To avoid that, we compare the magnitudes of the
+					; dividend coefficient and divisor coefficient, and use that to scale the
+					; dividend to give us a good quotient.
+
+					; Multiply the dividend by the scale factor, and divide that 128 bit result by
+					; the divisor.  Because of the scaling, the quotient is guaranteed to use most
+					; of the 64 bits, and never more. Reduce the final exponent by the number
+					; of digits scaled.
+
+					; use absolute values
+					dividend: lhs/coefficient
+					divisor: rhs/coefficient
+					
+					if dividend < 0 [dividend: dividend * -1]
+					if divisor < 0 [divisor: divisor * -1]
+
+					msb_dividend: msb-DeBruijn-32 as byte-ptr! dividend
+					msb_divisor: msb-DeBruijn-32 as byte-ptr! divisor
+
+					; Scale up the dividend to be approximately 58 bits longer than the divisor.
+					; Scaling uses factors of 10, so we must convert from a bit count to a digit
+					; count by multiplication by 77/256 (approximately LN2/LN10).
+					;scale-factor: msb_divisor + 58 - msb_dividend * 77 >> COEFFICIENT_SHIFT
+					scale-factor: msb_divisor + 16 - msb_dividend * 77 >> COEFFICIENT_SHIFT
+
+					; The largest power of 10 that can be held in an int64 is 1e18.
+					if scale-factor > 9 [
+						; If the number of scaling digits is larger than 18, then we will have to
+						; scale in two steps: first prescaling the dividend to fill a register, and
+						; then repeating to fill a second register. This happens when the divisor
+						; coefficient is much larger than the dividend coefficient.
+						scale-factor: 16 - scale-factor * 77 >> COEFFICIENT_SHIFT
+						lhs/coefficient: lhs/coefficient * powers/scale-factor
+						lhs/exponent: lhs/exponent - rhs/exponent / scale-factor
+					]
+
+					scale-factor < 9
+				]
 
 				; Multiply the dividend by the scale factor, and divide that 128 bit result by
 				; the divisor.  Because of the scaling, the quotient is guaranteed to use most
-				; of the 64 bits in r0, and never more. Reduce the final exponent by the number
+				; of the 64 bits, and never more. Reduce the final exponent by the number
 				; of digits scaled.
-				lhs/coefficient: lhs/coefficient / rhs/coefficient
-				lhs/exponent: lhs/exponent - rhs/exponent
+				power-of-ten: scale-factor + 1
+			
+				lhs/coefficient: lhs/coefficient * powers/power-of-ten / rhs/coefficient
+				lhs/exponent: lhs/exponent - rhs/exponent - scale-factor
+				lhs: pack lhs
 			]
 		]
 		return lhs
@@ -817,7 +866,7 @@ money: context [
 	]
 
 	msb-DeBruijn-32: func [
-		value	[integer!]
+		value	[byte-ptr!]
 		return:	[integer!]
 		/local
 			index							[integer!]
@@ -826,16 +875,15 @@ money: context [
 
 		multiply-DeBruijn-Bit-Position: [0 9 1 10 13 21 2 29 11 14 16 18 22 25 3 30 8 12 20 28 15 17 24 7 19 27 23 6 26 5 4 31]
 
-    	value: value or (value >> 1) ; first round down to one less than a power of 2
-		value: value or (value >> 2)		
-    	value: value or (value >> 4)		
-    	value: value or (value >> 8)		
-    	value: value or (value >> 16)		
-		value: value * 07C4ACDDh >> 27 + 1 ; series index starts with 1
-
-		index: value
-
-     	multiply-DeBruijn-Bit-Position/index
+		index: as integer! value
+		index: index or (index >>> 1)
+		index: index or (index >>> 2)
+		index: index or (index >>> 4)
+		index: index or (index >>> 8)
+		index: index or (index >>> 16)
+		index: index * 07C4ACDDh >>> 27 + 1
+		
+		multiply-DeBruijn-Bit-Position/index
 	]
 
 	;-- Actions --
