@@ -28,6 +28,7 @@ Red [
 	--test-- "debase 64 7"
 		--assert strict-equal? "A simple string" to string! debase/base "QSBzaW1wbGUgc3RyaW5n;" 64
 
+<<<<<<< HEAD
 ===end-group===
 
 ===start-group=== "debase 58"
@@ -45,6 +46,8 @@ Red [
 	--test-- "debase 58 6"
 		--assert strict-equal? #{000295EC35D638C16B25608B4E362A214A5692D2005677274F} debase/base "1EfxCKm257NbVJhJCVMzyhkvuJh1j6Zyx" 58
 
+=======
+>>>>>>> FIX: issue #3491 (crash when debase string include ";")
 ===end-group===
 
 ===start-group=== "debase 16"
