@@ -810,30 +810,24 @@ money: context [
 		]
 
 		; If the exponents match or if their signs are different, then return false.
-		if any [lhs/exponent = rhs/exponent lhs/value xor rhs/value <> 0][
+		if any [lhs/exponent = rhs/exponent lhs/value xor rhs/value < 0][
 			return 1
 		]
 
 		; Do it the hard way by subtraction. Is the difference zero?
 		difference: declare red-money!
-
 		difference: subtract-money lhs rhs
 
-		if difference/exponent = NAN [
+		if any [difference/exponent = NAN difference/value <> 0][
 			return 1
 		]
 
-		either difference/value = 0 [
-			return 1
-		]
-		[
-			return 0
-		]
+		return 0
 	]
 
 	less-money: func [
 		; Compare two dec64 numbers. If either argument is any nan, then the result is
-		; nan. If the first is less than the second, return 0, otherwise return 1.
+		; nan. If the first is less than the second, return -1, otherwise return 1.
 		lhs 	[red-money!]
 		rhs 	[red-money!]
 		return: [integer!]
@@ -847,12 +841,12 @@ money: context [
 			lhs/coefficient: 0
 			lhs/exponent: NAN
 
-			return 0
+			return 1
 		]
 
 		; If the exponents are the same, or the coefficient signs are different, then
 		; do a simple compare.
-		either any [lhs/exponent = rhs/exponent lhs/value xor rhs/value <> 0][
+		either any [lhs/exponent = rhs/exponent lhs/value xor rhs/value < 0][
 			if lhs/coefficient < rhs/coefficient [
 				return -1
 			]
@@ -860,23 +854,14 @@ money: context [
 		[
 			; Do it the hard way by subtraction. Is the difference zero?
 			difference: declare red-money!
-
 			difference: subtract-money lhs rhs
 
-			if difference/exponent = NAN [
-				return 0
-			]
-
-			either difference/value = 0 [
+			if all [difference/exponent <> NAN difference/value < 0][
 				return -1
-			]
-			[
-				return 1
 			]
 		]
 
 		return 1
-
 	]
 
 	do-math-op: func [
