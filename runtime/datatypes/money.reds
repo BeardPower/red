@@ -318,8 +318,9 @@ money: context [
 
 		; mix in the exponent
 		exponent: value/exponent and EXPONENT_MASK
-		value/value: value/value or exponent
 
+		value/value: value/value or exponent
+			
 		value
 	]
 
@@ -374,7 +375,7 @@ money: context [
 		][					
 			; The slow path is taken if the two operands do not both have zero exponents.
 			; Any of the exponents is nan
-			either any [lhs/exponent = -128 rhs/exponent = -128][
+			either any [lhs/exponent = NAN rhs/exponent = NAN][
 				lhs/coefficient: 0
 				lhs/exponent: NAN
 				return lhs
@@ -490,9 +491,9 @@ money: context [
 		][
 			; The subtrahend coefficient is -8388608. This value cannot easily be
 			; complemented, so take the slower path. This should be extremely rare.		
-			either any [lhs/exponent = 128 rhs/exponent = 128][
+			either any [lhs/exponent = NAN rhs/exponent = NAN][
 				lhs/coefficient: 0
-				lhs/exponent: 128
+				lhs/exponent: NAN 
 
 				return lhs
 			]
@@ -555,7 +556,7 @@ money: context [
 	][
 		; The result is nan if one or both of the operands is nan and neither of the
 		; operands is zero.
-		either all [any [lhs/exponent = -128 rhs/exponent = -128] all [lhs/coefficient <> 0 rhs/coefficient <> 0]][
+		either all [any [lhs/exponent = NAN rhs/exponent = NAN] all [lhs/coefficient <> 0 rhs/coefficient <> 0]][
 				lhs/coefficient: 0
 				lhs/exponent: NAN
 				return lhs
@@ -599,14 +600,14 @@ money: context [
 	][
 		case [
 			; if the dividend is zero, the quotient is zero
-			all [lhs/coefficient = 0 lhs/exponent <> -128][
+			all [lhs/coefficient = 0 lhs/exponent <> NAN][
 				lhs/exponent: 0
 				return lhs
 			]
 			; if either the divident is nan or the divisor is zero
-			any [lhs/exponent = -128 rhs/coefficient = 0]
+			any [lhs/exponent = NAN rhs/coefficient = 0]
 			[
-				lhs/exponent: -128
+				lhs/exponent: NAN
 				return lhs
 			]
 			true [
@@ -664,6 +665,218 @@ money: context [
 			]
 		]
 		return lhs
+	]
+
+	negate: func [
+		return: [red-money!]
+		/local
+			money [red-money!]
+			fl	  [red-float!]
+			value [integer!]
+	][
+		#if debug? = yes [if verbose > 0 [print-line "money/negate"]]
+		
+		money: as red-money! stack/arguments
+
+		; Negate a number. We need to negate the coefficient without changing the
+		; exponent.
+		if money/exponent = NAN [
+			money/coefficient: 0
+
+			return money
+		]
+
+		; if the coefficient is zero, then the zero the exponent too
+		if money/coefficient = 0 [
+			money/exponent = 0
+		]
+
+		; complement/negate
+		money/value: money/value xor -256
+		money/value: money/value + 256
+
+		; The coefficient is -36028797018963968, which is the only coefficient that
+		; cannot be trivially negated. So we do this the hard way.
+		if system/cpu/overflow? [
+			; complement/negate the coefficient
+			money/coefficient: (money/coefficient xor -1) + 1
+
+			return pack money
+		]
+
+		; store the coefficient and exponent based on the value
+		money/coefficient: money/value >> COEFFICIENT_SHIFT
+		money/exponent: money/value and EXPONENT_MASK
+
+		money
+	]
+
+	absolute: func [
+		return: [red-money!]
+		/local
+			money [red-money!]
+	][
+		#if debug? = yes [if verbose > 0 [print-line "money/absolute"]]
+		
+		money: as red-money! stack/arguments
+
+		; Find the absolute value of a number. If the number is negative, hand it off
+		; to negate. Otherwise, return the number unless it is nan or zero.
+		if money/coefficient < 0 [
+			return negate money
+		]
+
+		case [
+			; if the coefficient is zero, then the zero the exponent too
+			money/coefficient = 0 [
+				money/exponent: 0
+			]
+			; is the number NaN?
+			money/exponent = NAN [
+				money/coefficient: 0
+			]
+			true []
+		]
+
+		return convert money
+	]
+
+	compare: func [
+		lhs    	[red-money!]						;-- first operand
+		rhs   	[red-money!]						;-- second operand
+		op	    [integer!]							;-- type of comparison
+		return:	[integer!]
+		/local
+			value 	[red-value!] 
+			result	[integer!]
+	][
+		#if debug? = yes [if verbose > 0 [print-line "money/compare"]]
+
+		if all [
+			any [op = COMP_FIND op = COMP_SAME op = COMP_STRICT_EQUAL]
+			TYPE_OF(rhs) <> TYPE_MONEY
+		][
+			return 1
+		]
+		
+		rhs: as red-money! rhs
+		value: as red-value! rhs 				
+		
+		switch TYPE_OF(rhs) [
+			TYPE_CHAR 
+			TYPE_INTEGER [
+				value/header: TYPE_INTEGER
+				rhs: money/to rhs value TYPE_INTEGER
+			]
+			TYPE_FLOAT
+			TYPE_PERCENT [
+				value/header: TYPE_FLOAT
+				rhs: money/to rhs value TYPE_FLOAT
+			]
+			TYPE_MONEY
+			[]
+			default [RETURN_COMPARE_OTHER]
+		]
+
+		switch op [
+			COMP_EQUAL
+			COMP_STRICT_EQUAL	[result: equal-money lhs rhs]
+			COMP_NOT_EQUAL 		[result: (equal-money lhs rhs) xor -1 + 1]
+			COMP_LESSER			[result: less-money lhs rhs]
+			COMP_LESSER_EQUAL 	[result: (less-money lhs rhs) and (equal-money lhs rhs)]
+			COMP_GREATER 		[result: (less-money rhs lhs) xor -1 + 1]
+			COMP_GREATER_EQUAL 	[result: (less-money rhs lhs) and (equal-money lhs rhs) xor -1 + 1]
+			default [SIGN_COMPARE_RESULT(lhs/value rhs/value)]
+		]
+
+		result
+	]
+
+	equal-money: func [
+		; Compare two dec64 numbers. If they are equal, return 0, otherwise return 1.
+		; Denormal zeroes are equal but denormal nans are not.
+		lhs 	[red-money!]
+		rhs 	[red-money!]
+		return: [integer!]
+			/local
+				difference [red-money!]
+	]
+	[
+		#if debug? = yes [if verbose > 0 [print-line "money/equal-money"]]
+		
+		; If the numbers are trivally equal, then return 0.
+		if lhs/value = rhs/value [
+			return 0
+		]
+
+		; If the exponents match or if their signs are different, then return false.
+		if any [lhs/exponent = rhs/exponent lhs/value xor rhs/value <> 0][
+			return 1
+		]
+
+		; Do it the hard way by subtraction. Is the difference zero?
+		difference: declare red-money!
+
+		difference: subtract-money lhs rhs
+
+		if difference/exponent = NAN [
+			return 1
+		]
+
+		either difference/value = 0 [
+			return 1
+		]
+		[
+			return 0
+		]
+	]
+
+	less-money: func [
+		; Compare two dec64 numbers. If either argument is any nan, then the result is
+		; nan. If the first is less than the second, return 0, otherwise return 1.
+		lhs 	[red-money!]
+		rhs 	[red-money!]
+		return: [integer!]
+			/local
+				difference [red-money!]
+	]
+	[
+		#if debug? = yes [if verbose > 0 [print-line "money/equal-money"]]
+	
+		if any [lhs/exponent = NAN rhs/exponent = NAN][
+			lhs/coefficient: 0
+			lhs/exponent: NAN
+
+			return 0
+		]
+
+		; If the exponents are the same, or the coefficient signs are different, then
+		; do a simple compare.
+		either any [lhs/exponent = rhs/exponent lhs/value xor rhs/value <> 0][
+			if lhs/coefficient < rhs/coefficient [
+				return -1
+			]
+		]
+		[
+			; Do it the hard way by subtraction. Is the difference zero?
+			difference: declare red-money!
+
+			difference: subtract-money lhs rhs
+
+			if difference/exponent = NAN [
+				return 0
+			]
+
+			either difference/value = 0 [
+				return -1
+			]
+			[
+				return 1
+			]
+		]
+
+		return 1
+
 	]
 
 	do-math-op: func [
@@ -944,13 +1157,15 @@ money: context [
 
 		switch TYPE_OF(spec) [
 			TYPE_CHAR [
-				proto/value: spec/data2
+				proto/coefficient: spec/data2
+				proto/exponent: 0
+				proto: convert proto			
 			]
 			TYPE_INTEGER [
 				int: as red-integer! spec		
 				proto/coefficient: int/value
 				proto/exponent: 0
-				proto: convert proto			
+				proto: convert proto		
 			]			
 			TYPE_FLOAT [
 				float: as red-float! spec
@@ -1021,7 +1236,7 @@ money: context [
 		#if debug? = yes [if verbose > 0 [print-line "money/form"]]
 
 		; sign extend the exponent
-		either money/exponent = -128 [
+		either money/exponent = NAN [
 			formed: "NAN"	
 		]
 		[
@@ -1069,13 +1284,13 @@ money: context [
 			:mold ;:form
 			null			;eval-path
 			null			;set-path
-			null
+			:compare
 			;-- Scalar actions --
-			null
+			:absolute
 			:add
 			:divide
 			:multiply
-			null
+			:negate
 			null
 			null
 			null
