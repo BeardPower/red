@@ -135,4 +135,184 @@ tokenizer: context [
 		slot/header: TYPE_TUPLE or (size << 19)
 	]
 
+	scan-money: func [
+		p		[byte-ptr!]
+		len		[integer!]
+		unit	[integer!]
+		value	[red-money!]
+		error	[int-ptr!]
+		return: [red-money!]
+		/local
+			c		   [integer!]
+			n	 	   [integer!]
+			m	 	   [integer!]
+			f	 	   [integer!]
+			z          [integer!]
+			tmp		   [integer!]
+			leading?   [logic!]
+			fractions? [logic!]
+			neg? 	   [logic!]
+			overflow?  [logic!]
+	][
+		leading?: yes
+		fractions?: no
+		neg?: no
+		overflow?: no
+
+		c: string/get-char p unit
+		if any [
+			c = as-integer #"+" 
+			c = as-integer #"-"
+		][
+			neg?: c = as-integer #"-"
+			p: p + unit
+			len: len - 1
+		]
+		m: 0
+		n: 0
+		f: 0
+		z: 0
+		value/coefficient: 0
+		value/exponent: 0
+		value/value: 0
+		value: money/convert value
+
+		until [
+			c: (string/get-char p unit) - #"0"
+			either all [c <= 9 c >= 0][					;-- skip #"'"
+
+				if fractions? [
+					f: f - 1
+					print-line ["adding a fractional digit : " f " len: " len]
+
+					; DEC32 can only handle 7 fractional digits
+
+					; if f = 7 [break]
+				] ; fractions need to be scaled by a negative exponent
+
+				either c = 0 [
+					if not leading? [
+						print-line ["adding trailing zero: " z]
+						z: z + 1 ; add trailing zeroes, so they can be scaled by the exponent
+					]					
+				][
+					comment {
+					; there was already an overflow, so only trailing zeroes are allowed from now on
+					if overflow? [					
+						print-line ["we had an overflow before and c is: " c]
+						print-line ["coefficient: " value/coefficient " exponent: " value/exponent " value: " value/value]
+
+						value: money/generate-nan value
+
+						return value						
+					]
+					}
+
+					; print-line ["got a char <> 0: " c]
+					leading?: no
+					z: z + 1
+					m: n * integer/int-power 10 z
+
+					z: 0
+
+					either neg? [tmp: m - 1][tmp: m]
+
+					if money/overflow? tmp [
+						; only trailing zeroes are allowed from now on
+						overflow?: yes
+
+						print-line ["we have an overflow with tmp: " tmp " m: " m " Only trailing zeroes from now on."]
+						error/value: -2						
+
+						; value: money/generate-nan
+
+						; return value
+
+						; value/coefficient: either neg? [0 - m][m]
+						; value/exponent: f
+						; value: money/pack value
+
+						; print-line ["coefficient: " value/coefficient " exponent: " value/exponent " value: " value/value]
+
+						; return value
+
+						value: money/generate-nan value
+						
+						return value	
+					]
+					
+					n: m
+
+					comment {
+					if all [neg? n = 8388600 c = 8][
+
+						print-line ["neg? " neg? " n = " n " c = " c]
+						; value/coefficient: -8388608
+						; value/exponent: 0
+						
+						m: -8388608
+						break
+					] ;-- special exit trap for -2147483648
+					}
+
+					m: n + c
+
+					either neg? [tmp: m - 1][tmp: m]
+
+					if money/overflow? tmp [
+						; only trailing zeroes are allowed from now on
+						overflow?: yes
+						print-line ["we have an overflow with tmp: " tmp " m: " m " n: " n " c: " c " Only trailing zeroes from now on."]
+					
+						error/value: -2
+
+						; value: money/generate-nan
+
+						; return value
+
+						; value/coefficient: either neg? [0 - m][m]
+						; value/exponent: f
+						; value: money/pack value
+
+						; print-line ["coefficient: " value/coefficient " exponent: " value/exponent " value: " value/value]
+
+						; return value
+
+						value: money/generate-nan value
+						
+						return value	
+					]
+
+					n: m					
+				] 
+			][
+				c: c + #"0"
+
+				print-line ["c: " c]
+				case [
+					c = as-integer #"." [
+						print-line ["fractional point"]
+						fractions?: yes]
+					c = as-integer #"'" [0]				;-- pass-thru
+					true				[
+						error/value: -1
+						len: 1 							;-- force exit
+					]
+				]
+			]
+			p: p + unit
+			len: len - 1
+			zero? len
+		]
+
+
+		print-line ["zeroes: " z " fractionals: " f]
+
+		value/coefficient: either neg? [0 - n][n]
+		value/exponent: z + f
+		value: money/pack value
+
+		print-line ["coefficient: " value/coefficient " exponent: " value/exponent " value: " value/value]
+		value
+	]
 ]
