@@ -236,6 +236,7 @@ integer: context [
 			TYPE_OF(right) = TYPE_TIME
 			TYPE_OF(right) = TYPE_VECTOR
 			TYPE_OF(right) = TYPE_DATE
+			TYPE_OF(right) = TYPE_MONEY
 		]
 
 		switch TYPE_OF(right) [
@@ -280,6 +281,9 @@ integer: context [
 				][
 					fire [TO_ERROR(script not-related) words/_subtract datatype/push TYPE_INTEGER]
 				]
+			]
+			TYPE_MONEY [
+				money/do-math op
 			]
 			default [
 				fire [TO_ERROR(script invalid-type) datatype/push TYPE_OF(right)]

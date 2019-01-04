@@ -258,7 +258,7 @@ float: context [
 
 	do-math: func [
 		type	  [integer!]
-		return:	  [red-float!]
+		return:	  [red-value!]
 		/local
 			left  [red-float!]
 			right [red-float!]
@@ -271,6 +271,7 @@ float: context [
 			t1?	  [logic!]
 			t2?	  [logic!]
 			pct?  [logic!]
+			test  [red-money!]
 	][
 		#if debug? = yes [if verbose > 0 [print-line "float/do-math"]]
 
@@ -288,7 +289,7 @@ float: context [
 		]
 
 		switch type2 [
-			TYPE_TUPLE [return as red-float! tuple/do-math type]
+			TYPE_TUPLE [return as red-value! tuple/do-math type]
 			TYPE_PAIR  [
 				if type1 <> TYPE_TIME [
 					if any [type = OP_SUB type = OP_DIV][
@@ -299,11 +300,16 @@ float: context [
 					copy-cell as red-value! right as red-value! left
 					right/header: type1
 					right/value: op1
-					return as red-float! pair/do-math type
+					return as red-value! pair/do-math type
 				]
 			]
 			TYPE_VECTOR [
-				return as red-float! stack/set-last vector/do-math-scalar type as red-vector! right as red-value! left
+				return as red-value! stack/set-last vector/do-math-scalar type as red-vector! right as red-value! left
+			]
+			TYPE_MONEY [
+				;test: money/do-math type
+				;print-line ["in float: coefficient: " test/coefficient " exponent: " test/exponent " value: " test/value]
+				return as red-value! money/do-math type
 			]
 			default [0]
 		]
@@ -350,7 +356,7 @@ float: context [
 		
 		if any [t1? t2?][left/header: TYPE_TIME]
 		if all [pct? not t2?][left/header: TYPE_PERCENT]
-		left
+		as red-value! left
 	]
 	
 	make-at: func [

@@ -389,7 +389,7 @@ money: context [
 
 		value/value: value/value or exponent
 			
-		print-line ["value/coefficient: " value/coefficient " value/exponent: " value/exponent " value/value: " value/value]
+		print-line ["converted: value/coefficient: " value/coefficient " value/exponent: " value/exponent " value/value: " value/value]
 
 		value
 	]
@@ -1194,6 +1194,11 @@ money: context [
 		#if debug? = yes [if verbose > 0 [print-line "money/equal-money"]]
 		
 		; If the numbers are trivally equal, then return 0.
+		; DEC64 should behave like float on $NaN which is not according to the DEC64 spec
+		if all [lhs/exponent = NAN rhs/exponent = NAN][
+			return 1
+		]
+		
 		if lhs/value = rhs/value [
 			return 0
 		]
@@ -1208,7 +1213,7 @@ money: context [
 		print-line ["equal subtract lhs coefficient: " lhs/coefficient " exponent: " lhs/exponent " value: " lhs/value]
 		print-line ["               rhs coefficient: " rhs/coefficient " exponent: " rhs/exponent " value: " rhs/value]
 
-		; save the original value, as subract-money will change lhs/rhs.
+		; save the original value, as subtract-money will change lhs/rhs.
 		tmp_lhs: declare red-money!
 		copy-cell as red-value! lhs as red-value! tmp_lhs
 		tmp_rhs: declare red-money!
@@ -1330,7 +1335,8 @@ money: context [
 			n			[integer!]
 			v			[integer!]
 			tp			[byte-ptr!]
-			int 		[red-integer!]			
+			int 		[red-integer!]
+			float 		[red-float!]		
 			int-value	[integer!]			
 			value		[red-value!]
 			tmp			[red-value!]
@@ -1369,16 +1375,32 @@ money: context [
 			TYPE_MONEY [
 				switch type-lhs [
 					TYPE_INTEGER [
+						print-line ["lhs is integer"]
 						int: as red-integer! lhs
 
 						; cast to the money type and set values accordingly to the money! spec
 						lhs/header: TYPE_MONEY				
 						lhs/coefficient: int/value			
 						lhs/exponent: 0
+						lhs/value: lhs/coefficient << COEFFICIENT_SHIFT
 						lhs: do-math-op lhs rhs op
 
 						return lhs
 					]	
+					TYPE_FLOAT [
+						print-line ["lhs is float"]
+						float: as red-float! lhs
+						value: as red-value! float
+						lhs: to lhs value TYPE_FLOAT
+						lhs/header: TYPE_MONEY
+						
+						print-line ["type_float: coefficient: " lhs/coefficient " exponent: " lhs/exponent " value: " lhs/value]						
+						lhs: do-math-op lhs rhs op
+
+						print-line ["type_float: coefficient: " lhs/coefficient " exponent: " lhs/exponent " value: " lhs/value]
+						
+						return lhs
+					]
 					TYPE_MONEY [
 						lhs: do-math-op lhs rhs op
 
@@ -1570,7 +1592,8 @@ money: context [
 		if TYPE_OF(spec) = TYPE_MONEY [return as red-money! spec] ; type cast to red-money!
 
 		proto/header: type
-
+		print-line ["type        : " type]
+		print-line ["type of spec: " TYPE_OF(spec)]
 		switch TYPE_OF(spec) [
 			TYPE_CHAR [
 				print-line ["char"]
@@ -1823,7 +1846,7 @@ money: context [
 
 		; sign extend the exponent
 		either money/exponent = NAN [
-			formed: "NAN"	
+			formed: "$NaN"	
 		]
 		[
 			print-line ["money/coefficient: " money/coefficient " money/exponent: " money/exponent " money/value: " money/value]
@@ -1867,10 +1890,10 @@ money: context [
 			;-- General actions --
 			null
 			null
-			null		;reflect
-			:to; :to
-			:form ;:form; :form
-			:mold ;:form
+			null			;reflect
+			:to; 			:to
+			:form			;form
+			:mold 			;mold
 			null			;eval-path
 			null			;set-path
 			:compare
