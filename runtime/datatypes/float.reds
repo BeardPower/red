@@ -271,7 +271,6 @@ float: context [
 			t1?	  [logic!]
 			t2?	  [logic!]
 			pct?  [logic!]
-			test  [red-money!]
 	][
 		#if debug? = yes [if verbose > 0 [print-line "float/do-math"]]
 
@@ -307,8 +306,6 @@ float: context [
 				return as red-value! stack/set-last vector/do-math-scalar type as red-vector! right as red-value! left
 			]
 			TYPE_MONEY [
-				;test: money/do-math type
-				;print-line ["in float: coefficient: " test/coefficient " exponent: " test/exponent " value: " test/value]
 				return as red-value! money/do-math type
 			]
 			default [0]
